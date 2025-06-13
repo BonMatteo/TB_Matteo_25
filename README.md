@@ -5,7 +5,7 @@ Ce projet contient des implémentations de réseaux de neurones pour l'analyse d
 ## Structure du Projet
 
 ```
-NN/
+DNN/
 ├── data/               # Dossier pour les données (non versionné)
 ├── test-NN/           # Tests unitaires
 ├── wandb/             # Logs de Weights & Biases (non versionné)
