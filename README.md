@@ -51,7 +51,68 @@ pip install -r requirements.txt
 
 ## Utilisation
 
-[À compléter avec les instructions d'utilisation spécifiques à votre projet]
+Pour lancer un entraînement, utilisez la commande suivante depuis le dossier `test-NN/` :
+
+```bash
+python train.py [options]
+```
+
+### Options disponibles :
+
+- `--run_name NAME` : Nom personnalisé pour cette exécution (par défaut : timestamp)
+- `--split_method METHOD` : Méthode de division des données (choix : 'random' ou 'catchment')
+  - `random` : Division aléatoire des données (par défaut)
+  - `catchment` : Division par bassin versant
+- `--test` : Active le mode test (divise les données en 70% train, 20% validation, 10% test)
+
+### Exemples de commandes :
+
+1. Entraînement standard avec division aléatoire :
+```bash
+python train.py
+```
+
+2. Entraînement avec un nom personnalisé :
+```bash
+python train.py --run_name "experiment_1"
+```
+
+3. Entraînement avec division par bassin versant :
+```bash
+python train.py --split_method "catchment"
+```
+
+4. Entraînement en mode test :
+```bash
+python train.py --test
+```
+
+5. Combinaison d'options :
+```bash
+python train.py --run_name "catchment_split_test" --split_method "catchment"
+```
+
+### Configuration avancée
+
+Les paramètres du modèle peuvent être modifiés en définissant la variable d'environnement `MODEL_CONFIG` pointant vers un fichier JSON de configuration. Les paramètres par défaut sont :
+
+```json
+{
+    "layer_dimensions": [4096],
+    "dropout_rate": 0.1,
+    "full_data": true,
+    "num_blocks": 5,
+    "layers_per_block": 4,
+    "batch_size": 128,
+    "years_range": [1994, 2022],
+    "init_lr": 1e-15,
+    "peak_lr": 1e-4,
+    "final_lr": 1e-6,
+    "warmup_epochs": 3,
+    "constant_epochs": 5,
+    "decay_epochs": 2
+}
+```
 
 ## Tests
 
