@@ -49,7 +49,7 @@ OLD_local_metrics/
 # Personal files
 experiment_configs.json
 run_experiments.py
-preprocess_metrics.py
+process_metrics.py
 kge_per_epoch_all_runs.csv
 mse_per_epoch_all_runs.csv
 test_mse_all_runs.csv
