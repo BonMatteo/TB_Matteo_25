@@ -36,16 +36,23 @@ wandb/
 
 # Data
 data/ 
+preprocessed_data/
+
+# Plots
+plots/
 
 # Checkpoints and metrics
 checkpoints/
 local_metrics/
 OLD_local_metrics/
 
-# Experiment files
+# Personal files
 experiment_configs.json
+run_experiments.py
+preprocess_metrics.py
 kge_per_epoch_all_runs.csv
 mse_per_epoch_all_runs.csv
+test_mse_all_runs.csv
 plot_metrics.py
 NN.code-workspace
 
