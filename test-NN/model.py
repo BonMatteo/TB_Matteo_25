@@ -11,6 +11,131 @@ import numpy as np
 import pandas as pd
 from pytorch_lightning.callbacks import ModelCheckpoint
 import random
+import json
+from datetime import datetime
+
+# Get the absolute path to the DNN directory
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
+class LocalMetricsLogger:
+    """Logger for storing metrics locally in a structured format.
+    
+    This logger mirrors the WandB logging structure but stores data locally in CSV files.
+    Each run gets its own directory with separate files for different metric types.
+    """
+    def __init__(self, run_id, save_dir="local_metrics"):
+        # Get the absolute path to the test-NN directory
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.save_dir = os.path.join(base_dir, save_dir, run_id)
+        os.makedirs(self.save_dir, exist_ok=True)
+        
+        # Initialize metric storage
+        self.metrics = {
+            'train': {},
+            'val': {},
+            'test': {},
+            'catchment_metrics': {},
+            'config': {}
+        }
+        
+        # Create files for each metric type
+        self._init_metric_files()
+        
+        # Store catchment metrics until epoch end
+        self.current_epoch_catchment_metrics = {
+            'training': {},
+            'validation': {},
+            'test': {}
+        }
+    
+    def _init_metric_files(self):
+        """Initialize CSV files for each metric type"""
+        # For training/validation/test metrics
+        for metric_type in ['train', 'val', 'test']:
+            file_path = os.path.join(self.save_dir, f"{metric_type}_metrics.csv")
+            # Create empty file with headers
+            with open(file_path, 'w') as f:
+                f.write("epoch,step,loss,learning_rate\n")
+    
+    def log_metrics(self, metrics_dict, step=None, metric_type='train', epoch=None):
+        """Log metrics to local storage
+        
+        Args:
+            metrics_dict: Dictionary of metrics to log
+            step: Current step number
+            metric_type: Type of metrics ('train', 'val', 'test', 'catchment_metrics')
+            epoch: Current epoch number
+        """
+        if metric_type not in self.metrics:
+            raise ValueError(f"Unknown metric type: {metric_type}")
+        
+        if metric_type in ['train', 'val', 'test']:
+            # Handle training/validation/test metrics
+            file_path = os.path.join(self.save_dir, f"{metric_type}_metrics.csv")
+            
+            # Extract metrics
+            loss = metrics_dict.get(f'{metric_type}/loss', '')
+            lr = metrics_dict.get(f'{metric_type}/learning_rate', '')
+            
+            # Write to CSV
+            with open(file_path, 'a') as f:
+                f.write(f"{epoch},{step},{loss},{lr}\n")
+                
+        elif metric_type == 'catchment_metrics':
+            # Handle catchment metrics
+            for metric_name, metric_value in metrics_dict.items():
+                # Parse metric name (e.g., "training_catchments/Sense/mse")
+                parts = metric_name.split('/')
+                if len(parts) == 3:
+                    phase, catchment, metric = parts
+                    # Convert phase name (e.g., "training_catchments" -> "training")
+                    phase = phase.replace('_catchments', '')
+                    
+                    if phase not in self.current_epoch_catchment_metrics:
+                        self.current_epoch_catchment_metrics[phase] = {}
+                    if catchment not in self.current_epoch_catchment_metrics[phase]:
+                        self.current_epoch_catchment_metrics[phase][catchment] = {}
+                    
+                    self.current_epoch_catchment_metrics[phase][catchment][metric] = metric_value
+    
+    def on_epoch_end(self, epoch):
+        """Write all collected catchment metrics at the end of each epoch"""
+        for phase, catchments in self.current_epoch_catchment_metrics.items():
+            if catchments:  # Only write if we have metrics
+                file_path = os.path.join(self.save_dir, f"{phase}_catchment_metrics_epoch_{epoch}.csv")
+                
+                # Write header and data
+                with open(file_path, 'w') as f:
+                    # Write header
+                    f.write("catchment,mse,mae,rmse,r2,kge\n")
+                    
+                    # Write data for each catchment
+                    for catchment, metrics in catchments.items():
+                        metrics_str = ','.join(str(metrics.get(m, '')) for m in ['mse', 'mae', 'rmse', 'r2', 'kge'])
+                        f.write(f"{catchment},{metrics_str}\n")
+        
+        # Reset the metrics collection for next epoch
+        self.current_epoch_catchment_metrics = {
+            'training': {},
+            'validation': {},
+            'test': {}
+        }
+    
+    def log_config(self, config_dict):
+        """Log configuration parameters
+        
+        Args:
+            config_dict: Dictionary of configuration parameters
+        """
+        # Convert numpy types to Python native types
+        config_dict = {
+            k: v.item() if hasattr(v, 'item') else v 
+            for k, v in config_dict.items()
+        }
+        
+        file_path = os.path.join(self.save_dir, "config.csv")
+        df = pd.DataFrame([config_dict])
+        df.to_csv(file_path, index=False)
 
 class WarmupDecayScheduler:
     """Learning rate scheduler with three phases:
@@ -244,6 +369,17 @@ class BaseflowNN(pl.LightningModule):
                  test=False):
         super().__init__()
         self.save_hyperparameters()
+        # Log config and input shape
+        print("\n[CONFIG] Model configuration:")
+        print(f"  full_data: {full_data}")
+        print(f"  input_features: {['Q', 'Pmean', 'Tmean'] if full_data else ['Q']}")
+        input_features = 366 * 3 if full_data else 366
+        print(f"  input_shape: {input_features}")
+        print(f"  layer_dimensions: {layer_dimensions}")
+        print(f"  num_blocks: {num_blocks}, layers_per_block: {layers_per_block}")
+        print(f"  split_method: {split_method}, test: {test}")
+        print(f"  batch_size: {batch_size}")
+        print(f"  learning rates: init={init_lr}, peak={peak_lr}, final={final_lr}")
         
         # Initialize catchment metrics tracker
         self.validation_catchment_tracker = CatchmentMetricsTracker()
@@ -289,6 +425,28 @@ class BaseflowNN(pl.LightningModule):
         
         # Get the WandB run ID if available
         self.run_id = wandb.run.id if wandb.run else "no_wandb"
+        
+        # Initialize local metrics logger
+        self.local_logger = LocalMetricsLogger(self.run_id)
+        
+        # Log initial configuration
+        config_dict = {
+            'layer_dimensions': layer_dimensions,
+            'dropout_rate': dropout_rate,
+            'init_lr': init_lr,
+            'peak_lr': peak_lr,
+            'final_lr': final_lr,
+            'warmup_epochs': warmup_epochs,
+            'constant_epochs': constant_epochs,
+            'decay_epochs': decay_epochs,
+            'full_data': full_data,
+            'batch_size': batch_size,
+            'num_blocks': num_blocks,
+            'layers_per_block': layers_per_block,
+            'split_method': split_method,
+            'test': test
+        }
+        self.local_logger.log_config(config_dict)
     
     def forward(self, x):
         return self.network(x)
@@ -317,10 +475,14 @@ class BaseflowNN(pl.LightningModule):
             })
         
         # Log training metrics
-        self.log_dict({
-            'train/loss': loss,
+        metrics = {
+            'train/loss': loss.item(),
             'train/learning_rate': self.current_lr
-        }, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        }
+        self.log_dict(metrics, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        
+        # Log metrics locally
+        self.local_logger.log_metrics(metrics, step=self.global_step, metric_type='train', epoch=self.current_epoch)
         
         return loss
     
@@ -348,9 +510,13 @@ class BaseflowNN(pl.LightningModule):
             })
         
         # Log validation metrics
-        self.log_dict({
-            'val/loss': val_loss,
-        }, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        metrics = {
+            'val/loss': val_loss.item()
+        }
+        self.log_dict(metrics, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        
+        # Log metrics locally
+        self.local_logger.log_metrics(metrics, step=self.global_step, metric_type='val', epoch=self.current_epoch)
         
         return val_loss
     
@@ -365,13 +531,22 @@ class BaseflowNN(pl.LightningModule):
             if self.logger:
                 # Log individual catchment metrics
                 for catchment in metrics_df.index:
-                    self.log_dict({
+                    metrics = {
                         f"training_catchments/{catchment}/mse": metrics_df.loc[catchment, 'mse'],
                         f"training_catchments/{catchment}/mae": metrics_df.loc[catchment, 'mae'],
                         f"training_catchments/{catchment}/rmse": metrics_df.loc[catchment, 'rmse'],
                         f"training_catchments/{catchment}/r2": metrics_df.loc[catchment, 'r2'],
                         f"training_catchments/{catchment}/kge": metrics_df.loc[catchment, 'kge'],
-                    }, sync_dist=True)
+                    }
+                    self.log_dict(metrics, sync_dist=True)
+                    
+                    # Log metrics locally
+                    self.local_logger.log_metrics(
+                        metrics,
+                        step=epoch,
+                        metric_type='catchment_metrics',
+                        epoch=epoch
+                    )
                 
                 # Log performance comparison plot
                 fig = self.training_catchment_tracker.plot_performance_comparison()
@@ -389,6 +564,9 @@ class BaseflowNN(pl.LightningModule):
                 })
                 plt.close(kge_fig)
             
+            # Write all collected metrics to files
+            self.local_logger.on_epoch_end(epoch)
+            
             # Reset tracker for next epoch
             self.training_prediction_performances = []
             self.training_catchment_tracker = CatchmentMetricsTracker()
@@ -396,17 +574,31 @@ class BaseflowNN(pl.LightningModule):
     def on_validation_epoch_end(self):
         """Log visualization of best, worst, and average predictions at validation end"""
         if len(self.prediction_performances) > 0:
-            # Sort predictions by MSE
-            sorted_predictions = sorted(self.prediction_performances, key=lambda x: x['mse'])
+            # Calculate KGE for each prediction
+            for pred_data in self.prediction_performances:
+                y_true = pred_data['target'].cpu().numpy()
+                y_pred = pred_data['prediction'].detach().cpu().numpy()
+                
+                # Calculate KGE components
+                r = np.corrcoef(y_true, y_pred)[0, 1]
+                alpha = np.std(y_pred) / (np.std(y_true) + 1e-10)
+                beta = np.mean(y_pred) / (np.mean(y_true) + 1e-10)
+                kge = 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
+                
+                # Add KGE to prediction data
+                pred_data['kge'] = kge
+            
+            # Sort predictions by KGE
+            sorted_predictions = sorted(self.prediction_performances, key=lambda x: x['kge'], reverse=True)
             
             # Get total number of predictions
             n_predictions = len(sorted_predictions)
             
             # Select best, worst, and average predictions to log
             predictions_to_log = {
-                'best': sorted_predictions[:3],
-                'worst': sorted_predictions[-3:],
-                'average': sorted_predictions[n_predictions//2-1:n_predictions//2+2]
+                'best': sorted_predictions[:3],  # Highest KGE
+                'worst': sorted_predictions[-3:],  # Lowest KGE
+                'average': sorted_predictions[n_predictions//2-1:n_predictions//2+2]  # Middle KGE
             }
             
             # Log selected predictions
@@ -416,6 +608,7 @@ class BaseflowNN(pl.LightningModule):
                     self._log_predictions(
                         pred_data['target'],
                         pred_data['prediction'],
+                        pred_data['catchment'],
                         f'{category}/{pred_data["catchment"]}'
                     )
             
@@ -438,13 +631,22 @@ class BaseflowNN(pl.LightningModule):
             if self.logger:
                 # Log individual catchment metrics
                 for catchment in metrics_df.index:
-                    self.log_dict({
+                    metrics = {
                         f"validation_catchments/{catchment}/mse": metrics_df.loc[catchment, 'mse'],
                         f"validation_catchments/{catchment}/mae": metrics_df.loc[catchment, 'mae'],
                         f"validation_catchments/{catchment}/rmse": metrics_df.loc[catchment, 'rmse'],
                         f"validation_catchments/{catchment}/r2": metrics_df.loc[catchment, 'r2'],
                         f"validation_catchments/{catchment}/kge": metrics_df.loc[catchment, 'kge'],
-                    }, sync_dist=True)
+                    }
+                    self.log_dict(metrics, sync_dist=True)
+                    
+                    # Log metrics locally
+                    self.local_logger.log_metrics(
+                        metrics,
+                        step=epoch,
+                        metric_type='catchment_metrics',
+                        epoch=epoch
+                    )
                 
                 # Log performance comparison plot
                 fig = self.validation_catchment_tracker.plot_performance_comparison()
@@ -461,6 +663,9 @@ class BaseflowNN(pl.LightningModule):
                     "global_step": self.global_step
                 })
                 plt.close(kge_fig)
+            
+            # Write all collected metrics to files
+            self.local_logger.on_epoch_end(epoch)
             
             # Reset trackers for next epoch
             self.prediction_performances = []
@@ -501,37 +706,46 @@ class BaseflowNN(pl.LightningModule):
         
         return optimizer
     
-    def _log_predictions(self, y_true, y_pred, stage='val'):
+    def _log_predictions(self, y_true, y_pred, catchment_full_name, stage='val'):
         """Create visualization comparing predicted vs actual baseflow values
-        
         Args:
             y_true: Ground truth baseflow values
             y_pred: Model predictions
-            stage: Identifier for the visualization in logging
+            catchment_full_name: Full catchment name (e.g., Muota_26_abcdef...)
+            stage: Identifier for the visualization in logging (format: 'phase/category/catchment')
         """
         if self.logger:
             fig = plt.figure(figsize=(10, 5))
-            
+            # Extract catchment ID (e.g., Muota_26)
+            if '_' in catchment_full_name:
+                catchment_id = '_'.join(catchment_full_name.split('_')[:2])
+            else:
+                catchment_id = catchment_full_name
+            # Get current epoch
+            epoch = self.current_epoch
             days = range(1, 367)
             plt.plot(days, y_true.cpu().numpy(), 
                     label='Actual', alpha=0.7, color='blue')
             plt.plot(days, y_pred.detach().cpu().numpy(), 
                     label='Predicted', alpha=0.7, color='red')
-            
             # Calculate metrics for this prediction
             mse = torch.mean((y_pred - y_true) ** 2).item()
             mae = torch.mean(torch.abs(y_pred - y_true)).item()
-            
+            # Calculate KGE
+            y_true_np = y_true.cpu().numpy()
+            y_pred_np = y_pred.detach().cpu().numpy()
+            r = np.corrcoef(y_true_np, y_pred_np)[0, 1]
+            alpha = np.std(y_pred_np) / (np.std(y_true_np) + 1e-10)
+            beta = np.mean(y_pred_np) / (np.mean(y_true_np) + 1e-10)
+            kge = 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
             plt.legend()
-            plt.title(f'Daily Baseflow Prediction\nMSE: {mse:.4f}, MAE: {mae:.4f}')
+            plt.title(f'Daily Baseflow Prediction - {catchment_id}, epoch {epoch}\nMSE: {mse:.4f}, MAE: {mae:.4f}, KGE: {kge:.4f}')
             plt.xlabel('Day of Year')
             plt.ylabel('Baseflow (m³/s)')
             plt.grid(True, alpha=0.3)
-            
-            # Log to WandB with hierarchical organization by epoch
-            epoch = self.current_epoch
+            # Log to WandB with catchment_id in the key
             self.logger.experiment.log({
-                f"predictions/epoch_{epoch}/{stage}": wandb.Image(fig),
+                f"predictions/epoch_{epoch}/{stage}_{catchment_id}": wandb.Image(fig),
                 "global_step": self.global_step
             })
             plt.close()
@@ -682,9 +896,11 @@ class BaseflowNN(pl.LightningModule):
         self.val_dataset = [(x, y, c) for x, y, c in zip(val_X, val_y, val_catchments)]
         self.test_dataset = None  # No test dataset in two-way split
         
-        print(f"\nDataset sizes:")
+        print(f"\n[SPLIT] Two-way split summary:")
         print(f"  Training samples: {len(self.train_dataset)}")
         print(f"  Validation samples: {len(self.val_dataset)}")
+        print(f"  Training catchments: {sorted(self.train_catchment_names)}")
+        print(f"  Validation catchments: {sorted(self.val_catchment_names)}")
         
         # Verify split integrity
         print("\nVerifying split integrity...")
@@ -851,10 +1067,13 @@ class BaseflowNN(pl.LightningModule):
         self.val_dataset = [(x, y, c) for x, y, c in zip(val_X, val_y, val_catchments)]
         self.test_dataset = [(x, y, c) for x, y, c in zip(test_X, test_y, test_catchments)]
         
-        print(f"\nDataset sizes:")
+        print(f"\n[SPLIT] Three-way split summary:")
         print(f"  Training samples: {len(self.train_dataset)}")
         print(f"  Validation samples: {len(self.val_dataset)}")
         print(f"  Test samples: {len(self.test_dataset)}")
+        print(f"  Training catchments: {sorted(self.train_catchment_names)}")
+        print(f"  Validation catchments: {sorted(self.val_catchment_names)}")
+        print(f"  Test catchments: {sorted(self.test_catchment_names)}")
         
         # Modify verification for this special case
         print("\nVerifying split integrity...")
@@ -915,26 +1134,44 @@ class BaseflowNN(pl.LightningModule):
             })
         
         # Log test metrics
-        self.log_dict({
-            'test/loss': test_loss,
-        }, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        metrics = {
+            'test/loss': test_loss.item()
+        }
+        self.log_dict(metrics, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        
+        # Log metrics locally
+        self.local_logger.log_metrics(metrics, step=self.global_step, metric_type='test', epoch=self.current_epoch)
         
         return test_loss
     
     def on_test_epoch_end(self):
         """Log visualization of test predictions at test epoch end"""
         if len(self.test_prediction_performances) > 0:
-            # Sort predictions by MSE
-            sorted_predictions = sorted(self.test_prediction_performances, key=lambda x: x['mse'])
+            # Calculate KGE for each prediction
+            for pred_data in self.test_prediction_performances:
+                y_true = pred_data['target'].cpu().numpy()
+                y_pred = pred_data['prediction'].detach().cpu().numpy()
+                
+                # Calculate KGE components
+                r = np.corrcoef(y_true, y_pred)[0, 1]
+                alpha = np.std(y_pred) / (np.std(y_true) + 1e-10)
+                beta = np.mean(y_pred) / (np.mean(y_true) + 1e-10)
+                kge = 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
+                
+                # Add KGE to prediction data
+                pred_data['kge'] = kge
+            
+            # Sort predictions by KGE
+            sorted_predictions = sorted(self.test_prediction_performances, key=lambda x: x['kge'], reverse=True)
             
             # Get total number of predictions
             n_predictions = len(sorted_predictions)
             
             # Select best, worst, and average predictions to log
             predictions_to_log = {
-                'best': sorted_predictions[:3],
-                'worst': sorted_predictions[-3:],
-                'average': sorted_predictions[n_predictions//2-1:n_predictions//2+2]
+                'best': sorted_predictions[:3],  # Highest KGE
+                'worst': sorted_predictions[-3:],  # Lowest KGE
+                'average': sorted_predictions[n_predictions//2-1:n_predictions//2+2]  # Middle KGE
             }
             
             # Log selected predictions
@@ -943,6 +1180,7 @@ class BaseflowNN(pl.LightningModule):
                     self._log_predictions(
                         pred_data['target'],
                         pred_data['prediction'],
+                        pred_data['catchment'],
                         f'test/{category}/{pred_data["catchment"]}'
                     )
             
@@ -964,13 +1202,22 @@ class BaseflowNN(pl.LightningModule):
             if self.logger:
                 # Log individual catchment metrics
                 for catchment in metrics_df.index:
-                    self.log_dict({
+                    metrics = {
                         f"test_catchments/{catchment}/mse": metrics_df.loc[catchment, 'mse'],
                         f"test_catchments/{catchment}/mae": metrics_df.loc[catchment, 'mae'],
                         f"test_catchments/{catchment}/rmse": metrics_df.loc[catchment, 'rmse'],
                         f"test_catchments/{catchment}/r2": metrics_df.loc[catchment, 'r2'],
                         f"test_catchments/{catchment}/kge": metrics_df.loc[catchment, 'kge'],
-                    }, sync_dist=True)
+                    }
+                    self.log_dict(metrics, sync_dist=True)
+                    
+                    # Log metrics locally
+                    self.local_logger.log_metrics(
+                        metrics,
+                        step=None,  # Test metrics don't have steps
+                        metric_type='catchment_metrics',
+                        epoch=None  # Test metrics don't have epochs
+                    )
                 
                 # Log performance comparison plot
                 fig = self.test_catchment_tracker.plot_performance_comparison()
@@ -985,6 +1232,9 @@ class BaseflowNN(pl.LightningModule):
                     f"test_catchment_metrics/kge_comparison": wandb.Image(kge_fig)
                 })
                 plt.close(kge_fig)
+            
+            # Write all collected metrics to files
+            self.local_logger.on_epoch_end(None)  # Test metrics don't have epochs
             
             # Reset tracker
             self.test_prediction_performances = []

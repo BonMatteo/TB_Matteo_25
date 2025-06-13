@@ -11,6 +11,7 @@ import wandb
 import argparse
 from datetime import datetime
 import os
+import json
 
 class PhaseCheckpoint(pl.Callback):
     """Callback that saves checkpoints at the end of learning rate phases"""
@@ -166,17 +167,7 @@ def main():
         display_name = f"{current_date}-baseflow-dnn"
         run_id = f"run-{current_date}-baseflow-dnn"
     
-    # Configure learning rate schedule
-    lr_config = {
-        'init_lr': 1e-15,     # Starting learning rate (very small)
-        'peak_lr': 1e-4,      # Maximum learning rate during training
-        'final_lr': 1e-6,     # Final learning rate after decay
-        'warmup_epochs': 3,   # Epochs for warmup phase
-        'constant_epochs': 5, # Epochs at peak learning rate
-        'decay_epochs': 2     # Epochs for learning rate decay
-    }
-    
-    # Model and training configuration
+    # Default configuration
     config = {
         'layer_dimensions': [4096],     # Size of network layers
         'dropout_rate': 0.1,            # Dropout for regularization, 0.1 normal -> 0.3-0.5 if overfitting
@@ -189,8 +180,26 @@ def main():
         'target_variable': 'baseflow',   # Target variable to predict
         'split_method': args.split_method,  # Method for splitting train/validation data
         'test': args.test,               # Whether to use test mode (three-way split)
-        **lr_config
-    }   
+        'init_lr': 1e-15,     # Starting learning rate (very small)
+        'peak_lr': 1e-4,      # Maximum learning rate during training
+        'final_lr': 1e-6,     # Final learning rate after decay
+        'warmup_epochs': 3,   # Epochs for warmup phase
+        'constant_epochs': 5, # Epochs at peak learning rate
+        'decay_epochs': 2     # Epochs for learning rate decay
+    }
+    
+    # Load configuration from environment variable if available
+    if "MODEL_CONFIG" in os.environ:
+        config_path = os.environ["MODEL_CONFIG"]
+        try:
+            with open(config_path, 'r') as f:
+                env_config = json.load(f)
+                # Update config with values from environment
+                config.update(env_config)
+                print(f"Loaded configuration from {config_path}")
+        except Exception as e:
+            print(f"Warning: Could not load configuration from {config_path}: {e}")
+            print("Using default configuration")
     
     # Initialize WandB for experiment tracking
     wandb_logger = WandbLogger(
