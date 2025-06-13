@@ -36,3 +36,16 @@ wandb/
 
 # Data
 data/ 
+
+# Checkpoints and metrics
+checkpoints/
+local_metrics/
+OLD_local_metrics/
+
+# Experiment files
+experiment_configs.json
+kge_per_epoch_all_runs.csv
+mse_per_epoch_all_runs.csv
+plot_metrics.py
+NN.code-workspace
+
