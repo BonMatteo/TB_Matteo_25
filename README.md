@@ -7,27 +7,32 @@ Ce projet contient des implémentations de réseaux de neurones pour l'analyse d
 ```
 DNN/
 ├── data/               # Dossier pour les données (non versionné)
-├── test-NN/           # Tests unitaires
+│   └── baseflow_23x100catchments_29years/  # Données de baseflow
+├── test-NN/           # Code source et tests
 ├── wandb/             # Logs de Weights & Biases (non versionné)
 └── venv/              # Environnement virtuel Python (non versionné)
 ```
 
 ## Format des Données
 
-Les données doivent être placées dans le dossier `data/` avec la structure suivante :
-
-```
-data/
-├── train/            # Données d'entraînement
-├── validation/       # Données de validation
-└── test/            # Données de test
-```
+Les données doivent être placées dans le dossier `data/baseflow_23x100catchments_29years/` avec la structure suivante :
 
 ### Format des Fichiers
 - Les données doivent être au format CSV
+- Chaque fichier doit être nommé `baseflow_[catchment_name].csv` (ex: `baseflow_Allenbach_0.csv`)
 - Chaque fichier doit contenir les colonnes suivantes :
-  - `features` : Les caractéristiques d'entrée
-  - `target` : La variable cible
+  - `time` : Date au format datetime
+  - `Q` : Débit total (streamflow) en m³/s
+  - `baseflow` : Débit de base (baseflow) en m³/s
+  - `Pmean` : Précipitations moyennes (optionnel, si full_data=True)
+  - `Tmean` : Température moyenne (optionnel, si full_data=True)
+
+### Prétraitement des Données
+- Les données sont filtrées selon l'indice de baseflow (BFI) :
+  - Seules les années avec 0.1 ≤ BFI ≤ 0.9 sont conservées
+  - BFI = total_baseflow / total_streamflow
+- Les données sont organisées en séquences annuelles (366 jours)
+- Les données prétraitées sont mises en cache dans le dossier `preprocessed_data/`
 
 ## Installation
 
