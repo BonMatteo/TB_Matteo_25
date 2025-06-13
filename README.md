@@ -1,6 +1,6 @@
-# Projet de Deep Learning
+# Travail de Bachelor
 
-Ce projet contient des implémentations de réseaux de neurones pour l'analyse de données.
+Ce projet évalue la faisabilité d’estimer la composante de débit de base (baseflow) d’un hydrographe à l’aide d’un algorithme de machine learning entraîné sur des données entièrement synthétiques.
 
 ## Structure du Projet
 
