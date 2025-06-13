@@ -14,7 +14,22 @@ import os
 import json
 
 class PhaseCheckpoint(pl.Callback):
-    """Callback that saves checkpoints at the end of learning rate phases"""
+    """Callback that manages model checkpoints during different learning rate phases.
+    
+    This callback is designed to work with the three-phase learning rate schedule:
+    1. Warmup Phase: Learning rate increases from init_lr to peak_lr
+    2. Constant Phase: Learning rate stays at peak_lr
+    3. Decay Phase: Learning rate decreases from peak_lr to final_lr
+    
+    The callback saves checkpoints at critical points:
+    - End of constant phase: Captures model state at peak performance
+    - End of decay phase: Saves final model state and signals training completion
+    
+    This helps in:
+    - Preserving model states at optimal learning rates
+    - Enabling training resumption from key points
+    - Supporting model comparison across phases
+    """
     def __init__(self, warmup_epochs, constant_epochs, decay_epochs):
         super().__init__()
         self.warmup_epochs = warmup_epochs
@@ -38,10 +53,31 @@ class PhaseCheckpoint(pl.Callback):
             trainer.should_stop = True
 
 class BaseflowTrainer:
-    """Basic trainer for the baseflow neural network without PyTorch Lightning
+    """Traditional training implementation for the baseflow neural network.
     
-    Provides traditional training loop implementation with manual epoch tracking,
-    validation, learning rate scheduling, and early stopping.
+    This class provides a manual training loop implementation as an alternative to
+    PyTorch Lightning. It includes:
+    
+    1. Training Loop Features:
+       - Manual epoch tracking and iteration
+       - Gradient clipping to prevent exploding gradients
+       - Learning rate scheduling with ReduceLROnPlateau
+       - Early stopping based on validation loss
+       
+    2. Model Management:
+       - Automatic checkpoint saving for best model
+       - State preservation for training resumption
+       - Validation-based model selection
+       
+    3. Training Monitoring:
+       - Per-epoch loss tracking
+       - Learning rate adjustment logging
+       - Early stopping notifications
+       
+    This implementation is useful for:
+    - Fine-grained control over the training process
+    - Custom training loop modifications
+    - Debugging and experimentation
     """
     def __init__(self, model, learning_rate=1e-3, weight_decay=1e-5):
         self.model = model
@@ -139,13 +175,36 @@ class BaseflowTrainer:
             print(f"Epoch {epoch}: Train Loss = {train_loss:.6f}, Val Loss = {val_loss:.6f}")
 
 def main():
-    """Main training execution function
+    """Main training execution function for the baseflow prediction model.
     
-    Handles:
-    1. Command line argument parsing
-    2. WandB configuration and logging setup
-    3. Model initialization with configured parameters
-    4. Training execution with PyTorch Lightning
+    This function orchestrates the entire training process:
+    
+    1. Configuration Management:
+       - Parses command line arguments for run customization
+       - Loads default model configuration
+       - Supports environment-based configuration override
+       - Handles run naming and identification
+       
+    2. Training Setup:
+       - Initializes WandB logging and tracking
+       - Configures model architecture and hyperparameters
+       - Sets up data splitting strategy
+       - Prepares learning rate scheduling
+       
+    3. Model Configuration:
+       - Network architecture (layers, blocks, dimensions)
+       - Training parameters (batch size, epochs, learning rates)
+       - Data features and preprocessing options
+       - Validation and testing strategies
+       
+    4. Training Execution:
+       - Manages the training process through PyTorch Lightning
+       - Handles checkpointing and model saving
+       - Monitors training progress and metrics
+       - Supports early stopping and phase-based training
+       
+    The function supports both standard training and test mode,
+    with configurable data splitting methods and extensive logging.
     """
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train baseflow prediction model')

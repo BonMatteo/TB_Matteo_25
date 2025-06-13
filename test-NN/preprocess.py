@@ -281,6 +281,25 @@ def load_catchment_datasets(file_paths, years_range=(1994, 2022), cache_dir='pre
     return datasets
 
 class BaseflowDataProcessor:
+    """Data processor for preparing baseflow datasets for model training.
+    
+    This class handles the final stages of data preparation before model training:
+    
+    1. Data Conversion:
+       - Converts numpy arrays to PyTorch tensors
+       - Maintains data integrity without scaling/transformation
+       
+    2. Data Splitting:
+       - Splits data into training and validation sets
+       - Supports configurable split ratios
+       
+    3. DataLoader Creation:
+       - Creates PyTorch DataLoaders for efficient batch processing
+       - Configures batch size and shuffling
+       
+    The processor is designed to work with the preprocessed data from BaseflowDataset,
+    preparing it in the final format needed for model training.
+    """
     def prepare_data(self, X, y, batch_size=32, train_split=0.8):
         # Convert to tensors without altering the data
         X_tensor = torch.FloatTensor(X)
@@ -313,7 +332,24 @@ class BaseflowDataProcessor:
         return predictions 
 
 class CatchmentMetricsTracker:
-    """Tracks and analyzes model performance by catchment"""
+    """Tracks and analyzes model performance metrics for individual catchments.
+    
+    This class provides comprehensive tracking and analysis of model performance
+    across different hydrological catchments. It tracks the following metrics:
+    
+    1. Error Metrics:
+       - MSE (Mean Squared Error): Measures average squared prediction error
+       - MAE (Mean Absolute Error): Measures average absolute prediction error
+       - RMSE (Root Mean Squared Error): Square root of MSE, in same units as predictions
+       
+    2. Performance Metrics:
+       - R² Score: Measures proportion of variance explained by the model
+       - KGE (Kling-Gupta Efficiency): Hydrological performance metric combining
+         correlation, variability ratio, and mean ratio
+         
+    The tracker maintains separate metrics for each catchment and provides
+    visualization tools for comparing performance across catchments.
+    """
     def __init__(self):
         self.metrics = {}
         

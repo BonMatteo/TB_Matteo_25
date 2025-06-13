@@ -343,14 +343,31 @@ class CatchmentMetricsTracker:
 class BaseflowNN(pl.LightningModule):
     """Neural network for baseflow prediction with residual architecture.
     
-    Architecture:
-    - Input normalization 
-    - Initial feature transformation
-    - Multiple residual blocks for deep feature processing
-    - Final output layer producing 366 daily baseflow values
+    This model is designed to predict daily baseflow values for hydrological catchments.
+    It uses a deep residual network architecture with the following key components:
     
-    Includes learning rate scheduling, metrics tracking by catchment,
-    and comprehensive logging functionality.
+    1. Input Processing:
+       - Handles both single-feature (Q only) and multi-feature (Q, Pmean, Tmean) inputs
+       - Input normalization for stable training
+       
+    2. Network Architecture:
+       - Initial feature transformation layer
+       - Multiple residual blocks for deep feature processing
+       - Each block contains multiple linear layers with dropout and ReLU
+       - Skip connections to help with gradient flow
+       - Layer normalization for training stability
+       
+    3. Output:
+       - Produces 366 daily baseflow predictions (accommodating leap years)
+       
+    4. Training Features:
+       - Learning rate scheduling with warmup, constant, and decay phases
+       - Comprehensive metrics tracking by catchment
+       - Support for both random and catchment-based data splitting
+       - Extensive logging of predictions and performance metrics
+       
+    The model is implemented as a PyTorch Lightning module for efficient training
+    and includes built-in support for validation and testing.
     """
     def __init__(self, 
                  layer_dimensions,

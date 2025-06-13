@@ -114,6 +114,57 @@ Les paramètres du modèle peuvent être modifiés en définissant la variable d
 }
 ```
 
+## Weights & Biases (wandb)
+
+Weights & Biases est une plateforme de suivi d'expériences qui permet de visualiser et de comparer les performances de différents modèles. Dans ce projet, wandb est utilisé pour :
+
+- Suivre les métriques d'entraînement (perte, taux d'apprentissage)
+- Visualiser les prédictions du modèle
+- Comparer les performances par bassin versant
+- Sauvegarder les configurations d'entraînement
+- Suivre l'évolution des métriques hydrologiques (KGE, R², etc.)
+
+### Configuration de wandb
+
+1. Créer un compte sur [Weights & Biases](https://wandb.ai)
+
+2. Installer wandb :
+```bash
+pip install wandb
+```
+
+3. Se connecter à wandb (première utilisation) :
+```bash
+wandb login
+```
+Suivez les instructions pour obtenir et entrer votre clé API.
+
+4. (Optionnel) Créer un nouveau projet sur wandb.ai et configurer le nom du projet :
+```bash
+export WANDB_PROJECT="baseflow-prediction"
+```
+
+### Utilisation dans le projet
+
+Le projet utilise automatiquement wandb pour le suivi des expériences. Chaque exécution de `train.py` crée une nouvelle expérience dans wandb avec :
+
+- Un nom unique basé sur la date et le nom personnalisé (si fourni)
+- Les paramètres de configuration du modèle
+- Les métriques d'entraînement en temps réel
+- Les visualisations des prédictions
+- Les performances par bassin versant
+
+Les logs sont stockés localement dans le dossier `wandb/` et synchronisés avec le serveur wandb.
+
+### Visualisation des résultats
+
+1. Accédez à votre tableau de bord wandb : https://wandb.ai/[votre-username]/baseflow-prediction
+2. Sélectionnez une exécution pour voir :
+   - Les courbes d'apprentissage
+   - Les visualisations des prédictions
+   - Les métriques par bassin versant
+   - Les configurations utilisées
+
 ## Tests
 
 Pour exécuter les tests :
