@@ -116,7 +116,7 @@ Les paramètres du modèle peuvent être modifiés en définissant la variable d
 
 ## Weights & Biases (wandb)
 
-Weights & Biases est une plateforme de suivi d'expériences qui permet de visualiser et de comparer les performances de différents modèles. Dans ce projet, wandb est utilisé pour :
+Weights & Biases est une plateforme gratuite de suivi d'expériences qui permet de visualiser et de comparer les performances de différents modèles. Dans ce projet, wandb est utilisé pour :
 
 - Suivre les métriques d'entraînement (perte, taux d'apprentissage)
 - Visualiser les prédictions du modèle
@@ -164,10 +164,3 @@ Les logs sont stockés localement dans le dossier `wandb/` et synchronisés avec
    - Les visualisations des prédictions
    - Les métriques par bassin versant
    - Les configurations utilisées
-
-## Tests
-
-Pour exécuter les tests :
-```bash
-python -m pytest test-NN/
-``` 
